@@ -36,6 +36,7 @@ export default function CRM() {
   const [phoneTab, setPhoneTab] = useState("contacts");
   const modalStack = useRef<NonNullable<Modal>[]>([]);
   const [modal, setModal] = useState<Modal>(null), [busy, setBusy] = useState(false), [formError, setFormError] = useState(""), [toast, setToast] = useState(""), [taskFilter, setTaskFilter] = useState("待完成");
+  const content = useRef<HTMLDivElement>(null);
   const dialog = useRef<HTMLDialogElement>(null), timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const notify = useCallback((message: string) => { setToast(message); if (timer.current) clearTimeout(timer.current); timer.current = setTimeout(() => setToast(""), 3500); }, []);
   const load = useCallback(async () => {
@@ -47,6 +48,7 @@ export default function CRM() {
     document.querySelector('meta[name="theme-color"]')?.setAttribute("content", tab === "home" && !view ? "#096fff" : "#ffffff");
   }, [tab, view]);
   useEffect(() => { setFormError(""); if (modal) dialog.current?.showModal(); else dialog.current?.close(); }, [modal]);
+  useEffect(() => { content.current?.scrollTo({ top: 0, behavior: "instant" }); }, [tab, view]);
   async function mutate(action: string, payload?: unknown, close = true) {
     setBusy(true); setFormError("");
     try { const r = await fetch("/api/crm", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, payload }) }); const v = await r.json() as { error?: string }; if (!r.ok) throw Error(v.error); await load(); if (close) closeModal(["deleteCustomer", "clearDemo"].includes(action)); notify("保存成功"); return true; }
@@ -60,7 +62,7 @@ export default function CRM() {
     if (all) modalStack.current = [];
     setModal(all ? null : modalStack.current.pop() || null);
   }
-  function nav(t: Tab, sub = "") { modalStack.current = []; setModal(null); setTab(t); setView(sub); setSearch(""); setFilters(false); setLevel("全部"); setStage("全部"); window.scrollTo({ top: 0, behavior: "instant" }); }
+  function nav(t: Tab, sub = "") { modalStack.current = []; setModal(null); setTab(t); setView(sub); setSearch(""); setFilters(false); setLevel("全部"); setStage("全部"); }
   function clients(p = "mine") { setPool(p); nav("customers"); }
   const nameOf = (id: string | null) => data.customers.find(c => c.id === id)?.name || "未关联客户";
   const activeTasks = data.tasks.filter(t => !t.completed), urgent = activeTasks.filter(t => t.dueDate <= TODAY());
@@ -95,36 +97,34 @@ export default function CRM() {
   const appLabels = ["新增客户","下单询价","写跟进","待办事项","高级筛选","线索公海","意向客户","成交客户","跟进记录","客户查重","工作台","经营分析","询价与报价","运踪与异常","新增运单","应收与授信","业务助手","数据备份","使用教程","系统设置"];
 
   return <div className="app-shell">
-    <div className={`workspace tab-${tab}${view ? " has-subview" : ""}`}>
+    <div className={`workspace tab-${tab}${view ? " has-subview" : ""}${tab === "home" && !view ? " compact-home" : ""}`}>
       {view && <header className="app-navbar"><button className="navbar-back" aria-label="返回上一级" onClick={() => { setView(""); setSearch(""); }}><ChevronLeft size={25} /></button><h1 className="navbar-title">{viewTitles[view] || "天途 CRM"}</h1><div className="navbar-actions">{viewActions[view] && <button onClick={() => open(viewActions[view][0])}>{viewActions[view][1]}</button>}</div></header>}
       {loading && <div className="loading-bar" />}
-      {error && <div className="connection-message">{needsLogin ? <ShieldCheck size={20} /> : <AlertTriangle size={20} />}<div><strong>{needsLogin ? "登录后保存你的业务数据" : "暂时无法连接云端"}</strong><p>{needsLogin ? "页面可直接浏览，登录后管理个人客户与业务。" : error}</p></div>{needsLogin ? <a className="button primary" href="/signin-with-chatgpt?return_to=/" target="_top">登录</a> : <button className="button secondary" onClick={() => { setLoading(true); void load(); }}>重试</button>}</div>}
+      <div className="app-content" ref={content}>
+      {error && !needsLogin && <div className="connection-message"><AlertTriangle size={20} /><div><strong>暂时无法连接云端</strong><p>{error}</p></div><button className="button secondary" onClick={() => { setLoading(true); void load(); }}>重试</button></div>}
+      {needsLogin && tab !== "home" && <div className="login-strip"><ShieldCheck size={15} /><span>登录后保存个人业务数据</span><a href="/signin-with-chatgpt?return_to=/" target="_top">登录</a></div>}
 
       {!view && tab === "home" && <>
         <header className="hero">
           <div className="hero-top"><div className="hero-brand"><span className="brand-mark white">T</span><strong>天途</strong><span />跨境物流</div><button className="hero-edition" onClick={() => open("businessCard")}>统一版<ChevronRight size={13} /></button><button className="icon-button" aria-label="消息提醒" onClick={() => nav("home", "notifications")}><Bell size={22} />{urgent.length + exceptions.length > 0 && <i className="notification-dot" />}</button></div>
           <form className="hero-search" onSubmit={e => { e.preventDefault(); const q = new FormData(e.currentTarget).get("q") as string; clients("all"); setSearch(q); }}><Search size={20} /><input name="q" aria-label="搜索企业、联系人或电话号码" placeholder="请输入企业名称、联系人或电话" /><button aria-label="搜索客户"><ArrowRight size={20} /></button></form>
         </header>
+        {needsLogin && <div className="login-strip"><ShieldCheck size={15} /><span>登录后保存个人业务数据</span><a href="/signin-with-chatgpt?return_to=/" target="_top">登录</a></div>}
         <div className="home-body">
           <section className="feature-grid" aria-label="拓客与业务入口">
-            {quick("线索公海",Globe,"green",() => clients("public"),"认领公海潜在客户")}
-            {quick("高级筛选",Funnel,"blue",() => { clients("all"); setFilters(true); },"按等级、阶段找客户")}
-            {quick("意向客户",Target,"blue",() => { clients("all"); setStage("有意向"); },"优先跟进重点商机")}
-            {quick("客户查重",Search,"cyan",() => { clients("all"); setFilters(true); },"查询企业或联系电话")}
-            {quick("运踪与异常",MapPin,"orange",() => nav("home","orders"),"查看在途与异常节点")}
-            {quick("写跟进",PencilLine,"purple",() => open("followup"),"记录沟通和客户需求")}
+            {quick("线索公海",Globe,"green",() => clients("public"),"认领潜在客户")}
+            {quick("高级筛选",Funnel,"blue",() => { clients("all"); setFilters(true); },"筛选目标客户")}
+            {quick("下单询价",FileText,"cyan",() => open("inquiryForm"),"提交运输需求")}
+            {quick("运踪与异常",MapPin,"orange",() => nav("home","orders"),"查看货物进度")}
           </section>
           <section className="business-shortcuts" aria-label="物流业务快捷操作">
-            {quick("下单询价",FileText,"blue",() => open("inquiryForm"))}
+            {quick("我的客户",Users,"blue",() => clients("mine"))}
+            {quick("写跟进",PencilLine,"purple",() => open("followup"))}
             {quick("报价服务",ChartNoAxesCombined,"orange",() => nav("home","inquiries"))}
-            {quick("新建运单",Package,"cyan",() => open("orderForm"))}
             {quick("待办事项",CalendarCheck,"green",() => nav("home","tasks"))}
           </section>
           <section className="overview-card"><div className="section-heading"><h2>业务概览</h2><button onClick={() => nav("home","analytics")}>数据报告<ChevronRight size={15} /></button></div><div className="overview-grid">{([["我的客户",data.customers.filter(c => c.pool === "mine").length,"位",() => clients("mine")],["待核价",pendingQuotes.length,"笔",() => nav("home","inquiries")],["在途运单",data.orders.filter(o => ["已出运","运输中","清关中","派送中"].includes(o.status)).length,"票",() => nav("home","orders")],["今日待办",urgent.length,"项",() => nav("home","tasks")]] as [string,number,string,() => void][]).map(([label,value,unit,action]) => <button key={label} onClick={action}><small>{label}</small><strong>{value}<em>{unit}</em></strong></button>)}</div></section>
-          <section className="section-block"><div className="section-heading"><h2>今日待办</h2><button onClick={() => nav("home","tasks")}>全部<ChevronRight size={15} /></button></div>{urgent.length ? urgent.slice(0,3).map(taskRow) : <div className="calm-state"><span className="calm-icon"><CalendarCheck size={26} /></span><div><strong>今天暂无待办</strong><p>添加回访计划，及时跟进客户</p></div><button aria-label="新建待办" onClick={() => open("taskForm")}><Plus size={21} /></button></div>}</section>
-          {!loading && !error && !data.customers.length && <div className="onboarding-card"><span><Users size={30} /></span><div><h3>添加你的第一位客户</h3><p>客户档案、跟进和业务集中管理</p><div><button className="text-button" onClick={() => open("customerForm")}>添加客户<ArrowRight size={15} /></button><button className="muted-link" disabled={busy} onClick={() => mutate("seedDemo")}>查看演示</button></div></div></div>}
-          {!!data.followups.length && <section className="section-block"><div className="section-heading"><h2>最近跟进</h2><button onClick={() => nav("home","followups")}>全部<ChevronRight size={15} /></button></div>{data.followups.slice(0,3).map(f => <button className="activity-row" key={f.id} onClick={() => open("customer",f.customerId)}><i /><div><strong>{nameOf(f.customerId)}</strong><p>{f.content}</p><small>{f.method} · {when(f.createdAt)}</small></div></button>)}</section>}
-          <button className="assistant-card" onClick={() => open("assistant")}><span><Sparkles size={26} /></span><div><strong>Hi，{data.profile.name}</strong><p>查看今日业务提醒与跟进建议</p></div><ArrowRight size={19} /></button>
+          <section className="section-block"><div className="section-heading"><h2>今日待办</h2><button onClick={() => nav("home","tasks")}>全部{urgent.length ? ` ${urgent.length}` : ""}<ChevronRight size={15} /></button></div>{urgent.length ? urgent.slice(0,1).map(taskRow) : <div className="calm-state"><span className="calm-icon"><CalendarCheck size={24} /></span><div><strong>今天暂无待办</strong><p>添加下一次客户回访</p></div><button aria-label="新建待办" onClick={() => open("taskForm")}><Plus size={21} /></button></div>}</section>
         </div>
       </>}
 
@@ -168,6 +168,7 @@ export default function CRM() {
       {view === "notifications" && <div className="page-content"><Heading title="消息提醒" subtitle="业务里的重要进展，不错过" />{urgent.map(taskRow)}{exceptions.map(o => <button className="business-card" key={o.id} onClick={() => open("order",o.id)}><Badge color="red">运单异常</Badge><h3>{o.number}</h3><p>{o.exception}</p></button>)}{!urgent.length && !exceptions.length && <Empty title="目前没有待处理提醒" description="今日待办和运单异常会集中出现在这里" icon={Bell} />}</div>}
       {view === "settings" && <div className="page-content"><Heading title="设置" subtitle="你的工作台，由你掌握" /><section className="white-panel settings-panel">{([["个人与企业资料",UserRound,() => open("profile")],["角色与数据权限",LockKeyhole,() => open("permissions")],["导出业务备份",Download,exportData],["载入演示客户",Database,() => mutate("seedDemo")],["刷新云端数据",RefreshCw,() => { void load(); notify("正在刷新云端数据"); }]] as [string,LucideIcon,() => void][]).map(([label,Icon,action]) => <button key={label} onClick={action} disabled={busy}><Icon size={20} /><span>{label}</span><ChevronRight size={17} /></button>)}{data.customers.some(c => c.demo) && <button onClick={() => open("clearDemo")}><X size={20} /><span>清除演示客户及关联记录</span><ChevronRight size={17} /></button>}</section><div className="integration-note"><Building2 size={21} /><div><strong>与管理端的关系</strong><p>业务流程与管理端对齐。本版独立保存云端数据；管理端目前使用浏览器本地数据，两端尚未实时同步。</p><a href="https://xingyuzhang65-cloud.github.io/tiantu-crm-admin/web/" target="_blank" rel="noreferrer">打开管理端<ArrowUpRight size={14} /></a></div></div><a className="button secondary full signout" href="/signout-with-chatgpt?return_to=/" target="_top"><LogOut size={17} />退出登录</a><p className="version-label">天途 CRM · V1.1</p></div>}
 
+      </div>
       {!view && <nav className="bottom-nav" aria-label="主导航">{TABS.map(t => <button aria-current={tab === t.id ? "page" : undefined} className={tab === t.id ? "active" : ""} key={t.id} onClick={() => nav(t.id)}><span><t.icon size={24} strokeWidth={tab === t.id ? 2.3 : 1.8} />{t.id === "mine" && urgent.length > 0 && <b>{urgent.length > 99 ? "99+" : urgent.length}</b>}</span><small>{t.label}</small>{tab === t.id && <i />}</button>)}</nav>}
     </div>
     <dialog ref={dialog} className={`sheet ${isCompact ? "compact-sheet" : isForm ? "form-sheet" : "detail-sheet"}`} aria-labelledby="dialog-title" onCancel={e => { if (busy) e.preventDefault(); else { e.preventDefault(); closeModal(); } }} onClick={e => { if (e.target === e.currentTarget && !busy && isCompact) closeModal(); }}>
